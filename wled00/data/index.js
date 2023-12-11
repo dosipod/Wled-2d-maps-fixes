@@ -840,9 +840,9 @@ function populateSegments(s)
 	if (!isM && !noNewSegs && (cfg.comp.seglen?parseInt(gId(`seg${lSeg}s`).value):0)+parseInt(gId(`seg${lSeg}e`).value)<ledCount) gId(`segr${lSeg}`).classList.remove("hide");
 	gId('segutil2').style.display = (segCount > 1) ? "block":"none"; // rsbtn parent
 
-	if (Array.isArray(li.maps) && li.maps.length>1) {
-		let cont = `Ledmap:&nbsp;<select class="sel-sg" onchange="requestJson({'ledmap':parseInt(this.value)})"><option value="" selected>Unchanged</option>`;
-		for (const k of (li.maps||[])) cont += `<option value="${k.id}">${k.id==0?'Default':(k.n?k.n:'ledmap'+k.id+'.json')}</option>`;
+	if (Array.isArray(li.maps) && li.maps.length>0) { //WLEDMM >0 instead of 1 to show also first ledmap. Attention: WLED AC has isM check, in MM Matrices are supported so do not check on isM
+		let cont = `Ledmap:&nbsp;<select class="sel-sg" onchange="requestJson({'ledmap':parseInt(this.value)})">`; //WLEDMM remove <option value="" selected>Unchanged</option>
+		for (const k of (li.maps||[])) cont += `<option value="${k.id}"${(i>0 && ledmapNr==k.id)?" selected":""}>${k.id==0?'Default':(k.id<10?'ledmap'+k.id+'.json':ledmapFileNames[k.id-10])}</option>`; //WLEDMM set ledmap selected, use ledmapFileNames
 		cont += "</select></div>";
 		gId("ledmap").innerHTML = cont;
 		gId("ledmap").classList.remove('hide');
