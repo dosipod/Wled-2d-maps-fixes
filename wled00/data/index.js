@@ -1,5 +1,5 @@
 //page js
-var loc = false, locip, locproto = "http:";
+var loc = false, locip;
 var isOn = false, nlA = false, isLv = false, isInfo = false, isNodes = false, syncSend = false, syncTglRecv = true;
 var hasWhite = false, hasRGB = false, hasCCT = false;
 var nlDur = 60, nlTar = 0;
@@ -22,22 +22,28 @@ var pN = "", pI = 0, pNum = 0;
 var pmt = 1, pmtLS = 0, pmtLast = 0;
 var lastinfo = {};
 var isM = false, mw = 0, mh=0;
-var ws, cpick, ranges, wsRpt=0;
+var ws, cpick, ranges;
 var cfg = {
 	theme:{base:"dark", bg:{url:""}, alpha:{bg:0.6,tab:0.8}, color:{bg:""}},
 	comp :{colors:{picker: true, rgb: false, quick: true, hex: false},
-          labels:true, pcmbot:false, pid:true, seglen:false, segpwr:false, segexp:false,
-		  css:true, hdays:false, fxdef:true}
+          labels:true, pcmbot:false, pid:true, seglen:false, segpwr:false, segexp:true, 
+          css:true, hdays:false, fxdef:true} //WLEDMM segexp true as default
 };
 var hol = [
 	[0,11,24,4,"https://aircoookie.github.io/xmas.png"], // christmas
 	[0,2,17,1,"https://images.alphacoders.com/491/491123.jpg"], // st. Patrick's day
 	[2025,3,20,2,"https://aircoookie.github.io/easter.png"],
-	[2023,3,9,2,"https://aircoookie.github.io/easter.png"],
 	[2024,2,31,2,"https://aircoookie.github.io/easter.png"],
-	[0,6,4,1,"https://initiate.alphacoders.com/download/wallpaper/516792/images/jpg/510921363292536"], // 4th of July
-	[0,0,1,1,"https://initiate.alphacoders.com/download/wallpaper/1198800/images/jpg/2522807481585600"] // new year
+	[0,6,4,1,"https://images.alphacoders.com/516/516792.jpg"], // 4th of July
+	[0,0,1,1,"https://images.alphacoders.com/119/1198800.jpg"] // new year
 ];
+var ctx = null; // WLEDMM
+var ledmapNr = -1; //WLEDMM
+var ledmapFileNames = []; //WLEDMM
+let nodesData = []; //WLEDMM
+let ibtglChecked = true; //WLEDMM
+let sbtglChecked = true; //WLEDMM
+let sbchkChecked = false; //WLEDMM
 
 function handleVisibilityChange() {if (!d.hidden && new Date () - lastUpdate > 3000) requestJson();}
 function sCol(na, col) {d.documentElement.style.setProperty(na, col);}
@@ -194,38 +200,20 @@ function loadSkinCSS(cId)
 		l.id   = cId;
 		l.rel  = 'stylesheet';
 		l.type = 'text/css';
-		l.href = getURL('/skin.css');
+		l.href = (loc?`http://${locip}`:'.') + '/skin.css';
 		l.media = 'all';
 		h.appendChild(l);
 	}
 }
 
-function getURL(path) {
-	return (loc ? locproto + "//" + locip : "") + path;
-}
 function onLoad()
 {
-	let l = window.location;
-	if (l.protocol == "file:") {
+	if (window.location.protocol == "file:") {
 		loc = true;
 		locip = localStorage.getItem('locIp');
 		if (!locip) {
 			locip = prompt("File Mode. Please enter WLED IP!");
 			localStorage.setItem('locIp', locip);
-		}
-	} else {
-		// detect reverse proxy and/or HTTPS
-		let pathn = l.pathname;
-		let paths = pathn.slice(1,pathn.endsWith('/')?-1:undefined).split("/");
-		//if (paths[0]==="sliders") paths.shift();
-		//while (paths[0]==="") paths.shift();
-		locproto = l.protocol;
-		locip = l.hostname + (l.port ? ":" + l.port : "");
-		if (paths.length > 0 && paths[0]!=="") {
-			loc = true;
-			locip +=  "/" + paths[0];
-		} else if (locproto==="https:") {
-			loc = true;
 		}
 	}
 	var sett = localStorage.getItem('wledUiCfg');
@@ -236,7 +224,7 @@ function onLoad()
 	if (localStorage.getItem('pcm') == "true" || (!/Mobi/.test(navigator.userAgent) && localStorage.getItem('pcm') == null)) togglePcMode(true);
 	applyCfg();
 	if (cfg.comp.hdays) { //load custom holiday list
-		fetch(getURL("/holidays.json"), {	// may be loaded from external source
+		fetch((loc?`http://${locip}`:'.') + "/holidays.json", {	// may be loaded from external source
 			method: 'get'
 		})
 		.then((res)=>{
@@ -452,7 +440,9 @@ function loadPresets(callback = null)
 	// afterwards
 	if (!callback && pmt == pmtLast) return;
 
-	fetch(getURL('/presets.json'), {
+	var url = (loc?`http://${locip}`:'') + '/presets.json';
+
+	fetch(url, {
 		method: 'get'
 	})
 	.then(res => {
@@ -476,7 +466,9 @@ function loadPresets(callback = null)
 
 function loadPalettes(callback = null)
 {
-	fetch(getURL('/json/palettes'), {
+	var url = (loc?`http://${locip}`:'') + '/json/palettes';
+
+	fetch(url, {
 		method: 'get'
 	})
 	.then((res)=>{
@@ -498,7 +490,9 @@ function loadPalettes(callback = null)
 
 function loadFX(callback = null)
 {
-	fetch(getURL('/json/effects'), {
+	var url = (loc?`http://${locip}`:'') + '/json/effects';
+
+	fetch(url, {
 		method: 'get'
 	})
 	.then((res)=>{
@@ -510,7 +504,6 @@ function loadFX(callback = null)
 		populateEffects();
 	})
 	.catch((e)=>{
-		//setTimeout(loadFX, 250); // retry
 		showToast(e, true);
 	})
 	.finally(()=>{
@@ -521,7 +514,9 @@ function loadFX(callback = null)
 
 function loadFXData(callback = null)
 {
-	fetch(getURL('/json/fxdata'), {
+	var url = (loc?`http://${locip}`:'') + '/json/fxdata';
+
+	fetch(url, {
 		method: 'get'
 	})
 	.then((res)=>{
@@ -536,7 +531,6 @@ function loadFXData(callback = null)
 	})
 	.catch((e)=>{
 		fxdata = [];
-		//setTimeout(loadFXData, 250); // retry
 		showToast(e, true);
 	})
 	.finally(()=>{
@@ -550,7 +544,7 @@ function populateQL()
 {
 	var cn = "";
 	if (pQL.length > 0) {
-		pQL.sort((a,b) => (a[0]>b[0]));
+		pQL.sort((a,b) => (a[1]>b[1])); //WLEDMM do not sort on preset id but on ql name
 		cn += `<p class="labels hd">Quick load</p>`;
 		for (var key of (pQL||[])) {
 			cn += `<button class="btn btn-xs psts" id="p${key[0]}qlb" title="${key[2]?key[2]:''}" onclick="setPreset(${key[0]});">${key[1]}</button>`;
@@ -581,7 +575,8 @@ function populatePresets(fromls)
 
 		cn += `<div class="pres lstI" id="p${i}o">`;
 		if (cfg.comp.pid) cn += `<div class="pid">${i}</div>`;
-		cn += `<div class="pname lstIname" onclick="setPreset(${i})">${isPlaylist(i)?"<i class='icons btn-icon'>&#xe139;</i>":""}${pName(i)}
+		//WLEDMM: show ql if defined
+		cn += `<div class="pname lstIname" onclick="setPreset(${i})">${isPlaylist(i)?"<i class='icons btn-icon'>&#xe139;</i>":""}${(pJson[i].ql?pJson[i].ql+' ':'') + pName(i)}
 	<i class="icons edit-icon flr" id="p${i}nedit" onclick="tglSegn(${i+100})">&#xe2c6;</i></div>
 	<i class="icons e-icon flr" id="sege${i+100}" onclick="expand(${i+100})">&#xe395;</i>
 	<div class="presin lstIcontent" id="seg${i+100}"></div>
@@ -656,8 +651,11 @@ function parseInfo(i) {
 function populateInfo(i)
 {
 	var cn="";
-	var heap = i.freeheap/1024;
-	heap = heap.toFixed(1);
+	var heap = i.freeheap/1000;
+	var heap = Math.round(i.freeheap/100)/10;        // WLEDMM bugfix
+	var theap = (i.totalheap>0)?i.totalheap/1000:-1; //WLEDMM - total heap is not available on 8266
+	var flashsize = i.getflash/1000; //WLEDMM and Athom
+	flashsize = flashsize.toFixed(1); //WLEDMM and Athom
 	var pwr = i.leds.pwr;
 	var pwru = "Not calculated";
 	if (pwr > 1000) {pwr /= 1000; pwr = pwr.toFixed((pwr > 10) ? 0 : 1); pwru = pwr + " A";}
@@ -676,21 +674,44 @@ function populateInfo(i)
 //	if (i.ver.includes("-bl")) vcn = "Supāku";
 	if (i.cn) vcn = i.cn;
 
-	cn += `v${i.ver} "${vcn}"<br><br><table>
+	//WLEDMM: add total heap and total PSRAM, and build number, add bin name
+	if (i.ver.includes("0.14.1")) vcn = "Sitting Ducks"; // easter egg
+	if (i.ver.includes("0.14.0")) vcn = "Lupo";          // check for MM versioning scheme
+	if (i.ver.includes("0.14.0-b15")) vcn = "Sitting Ducks"; // late easter egg
+	if (i.ver.includes("0.14.0-b2")) vcn = "This is the way"; // recently watched The Mandalorian? I have spoken ;-)
+	if (i.ver.includes("0.14.0-b15.22")) vcn = "Lupo";
+	cn += `v${i.ver} &nbsp;<i>"${vcn}"</i><p>(WLEDMM_${i.ver} ${i.rel}.bin)</p><p><em>build ${i.vid}</em></p><table>
 ${urows}
-${urows===""?'':'<tr><td colspan=2><hr style="height:1px;border-width:0;color:gray;background-color:gray"></td></tr>'}
-${i.opt&0x100?inforow("Debug","<button class=\"btn btn-xs\" onclick=\"requestJson({'debug':"+(i.opt&0x0080?"false":"true")+"});\"><i class=\"icons "+(i.opt&0x0080?"on":"off")+"\">&#xe08f;</i></button>"):''}
+${urows===""?'':'<tr><td colspan=2><hr style="height:1px;border-width:0;color:SeaGreen;background-color:Seagreen"></td></tr>'}
+${i.opt&0x100?inforow("Net Print ☾","<button class=\"btn btn-xs\" onclick=\"requestJson({'netDebug':"+(i.opt&0x0080?"false":"true")+"});\"><i class=\"icons "+(i.opt&0x0080?"on":"off")+"\">&#xe08f;</i></button>"):''}
+${i.serialOnline?inforow(i.serialOnline,"TX="+i.sTX,"; RX="+i.sRX):""}
+${i.opt&0x100?'<tr><td colspan=2><hr style="height:1px;border-width:0;color:SeaGreen;background-color:SeaGreen"></td></tr>':''}
 ${inforow("Build",i.vid)}
-${inforow("Signal strength",i.wifi.signal +"% ("+ i.wifi.rssi, " dBm)")}
-${inforow("Uptime",getRuntimeStr(i.uptime))}
-${inforow("Time",i.time)}
-${inforow("Free heap",heap," kB")}
-${i.psram?inforow("Free PSRAM",(i.psram/1024).toFixed(1)," kB"):""}
 ${inforow("Estimated current",pwru)}
 ${inforow("Average FPS",i.leds.fps)}
-${inforow("MAC address",i.mac)}
+${inforow("Signal strength",i.wifi.signal +"% ("+ i.wifi.rssi, " dBm)")}
+${inforow("Uptime",getRuntimeStr(i.uptime))}
+<!-- WLEDMM begin--> 
+<tr><td colspan=2><hr style="height:1px;border-width:0;color:SeaGreen;background-color:SeaGreen"></td></tr>
 ${inforow("Filesystem",i.fs.u + "/" + i.fs.t + " kB (" +Math.round(i.fs.u*100/i.fs.t) + "%)")}
+${theap>0?inforow("Heap ☾",((i.totalheap-i.freeheap)/1000).toFixed(0)+"/"+theap.toFixed(0)+" kB"," ("+Math.round((i.totalheap-i.freeheap)/(10*theap))+"%)"):""}
+${i.minfreeheap?inforow("Max used heap ☾",((i.totalheap-i.minfreeheap)/1000).toFixed(1)+" kB"," ("+Math.round((i.totalheap-i.minfreeheap)/(10*theap))+"%)"):""}
+${inforow("Free heap",heap," kB")}
+${i.freestack?inforow("Free stack ☾",i.freestack," kB"):""} <!--WLEDMM-->
+${inforow("Flash Size ☾",flashsize," kB")}  <!--WLEDMM and Athom-->
+${i.tpram?inforow("PSRAM ☾",(i.tpram/1024).toFixed(1)," kB"):""}
+${i.psram?((i.tpram-i.psram)>16383?inforow("Used PSRAM ☾",((i.tpram-i.psram)/1024).toFixed(1)," kB"):inforow("Used PSRAM ☾",(i.tpram-i.psram)," B")):""}
+${i.psusedram?((i.tpram-i.psusedram)>16383?inforow("Max used PSRAM ☾",((i.tpram-i.psusedram)/1024).toFixed(1)," kB"):inforow("Max used PSRAM ☾",(i.tpram-i.psusedram)," B")):""}
+${i.psram?inforow("Free PSRAM",(i.psram/1024).toFixed(1)," kB"):""}
+${inforow("MAC address",i.mac)}
 ${inforow("Environment",i.arch + " " + i.core + " (" + i.lwip + ")")}
+<tr><td colspan=2><hr style="height:1px;border-width:0;color:SeaGreen;background-color:SeaGreen"></td></tr>
+${i.e32model?inforow(i.e32model + " ☾",i.e32cores +" core(s)"," "+i.e32speed+" Mhz"):""}
+${i.e32flash?inforow("Flash "+i.e32flash+"MB"+" mode "+i.e32flashmode+i.e32flashtext + " ☾",i.e32flashspeed," Mhz"):""}
+${i.e32code?inforow("Last ESP Restart ☾",i.e32code+" "+i.e32text):""}
+${i.e32core0code?inforow("Core0 rst reason ☾",i.e32core0code, " "+i.e32core0text):""}
+${i.e32core1code?inforow("Core1 rst reason ☾",i.e32core1code, " "+i.e32core1text):""}
+<!-- WLEDMM end--> 
 </table>`;
 	gId('kv').innerHTML = cn;
 	//  update all sliders in Info
@@ -706,6 +727,9 @@ function populateSegments(s)
 	let li = lastinfo;
 	segCount = 0; lowestUnused = 0; lSeg = 0;
 
+	ledmapNr = s.ledmap; //WLEDMM
+	ledmapFileNames = []; //WLEDMM
+
 	for (var inst of (s.seg||[])) {
 		segCount++;
 
@@ -715,6 +739,8 @@ function populateSegments(s)
 
 		let sg = gId(`seg${i}`);
 		let exp = sg ? (sg.classList.contains('expanded') || (i===0 && cfg.comp.segexp)) : false;
+
+		ledmapFileNames.push((inst.n?inst.n:"default") + ".json"); //WLEDMM
 
 		// segment set icon color
 		let cG = "var(--c-b)";
@@ -743,13 +769,17 @@ function populateSegments(s)
 			rvYck = `<label class="check revchkl">Reverse<input type="checkbox" id="seg${i}rY" onchange="setRevY(${i})" ${inst.rY?"checked":""}><span class="checkmark"></span></label>`;
 			miYck = `<label class="check revchkl">Mirror<input type="checkbox" id="seg${i}mY" onchange="setMiY(${i})" ${inst.mY?"checked":""}><span class="checkmark"></span></label>`;
 		}
+		// WLEDMM: jMap
 		let map2D = `<div id="seg${i}map2D" data-map="map2D" class="lbl-s hide">Expand 1D FX<br>`+
 						`<div class="sel-p"><select class="sel-p" id="seg${i}m12" onchange="setM12(${i})">`+
 							`<option value="0" ${inst.m12==0?' selected':''}>Pixels</option>`+
 							`<option value="1" ${inst.m12==1?' selected':''}>Bar</option>`+
 							`<option value="2" ${inst.m12==2?' selected':''}>Arc</option>`+
 							`<option value="3" ${inst.m12==3?' selected':''}>Corner</option>`+
-						`</select></div>`+
+							`<option value="4" ${inst.m12==4?' selected':''}>jMap ☾</option>`+
+							`<option value="5" ${inst.m12==5?' selected':''}>Circle ☾</option>`+
+							`<option value="6" ${inst.m12==6?' selected':''}>Block ☾</option>`+
+							`</select></div>`+
 					`</div>`;
 		let sndSim = `<div data-snd="si" class="lbl-s hide">Sound sim<br>`+
 						`<div class="sel-p"><select class="sel-p" id="seg${i}si" onchange="setSi(${i})">`+
@@ -757,6 +787,9 @@ function populateSegments(s)
 							`<option value="1" ${inst.si==1?' selected':''}>WeWillRockYou</option>`+
 						`</select></div>`+
 					`</div>`;
+		//WLEDMM ARTIFX
+		let fxName = eJson.find((o)=>{return o.id==selectedFx}).name;
+		let cusEff = `<button class="btn" onclick="toggleCEEditor('${inst.n?inst.n:"default"}', ${i})">ARTI-FX Editor ☾</button><br>`;
 		cn += `<div class="seg lstI ${i==s.mainseg ? 'selected' : ''} ${exp ? "expanded":""}" id="seg${i}" data-set="${inst.set}">`+
 				`<label class="check schkl">`+
 					`<input type="checkbox" id="seg${i}sel" onchange="selSeg(${i})" ${inst.sel ? "checked":""}>`+
@@ -774,7 +807,8 @@ function populateSegments(s)
 				`<i class="icons e-icon flr" id="sege${i}" onclick="expand(${i})">&#xe395;</i>`+
 				(cfg.comp.segpwr ? segp : '') +
 				`<div class="segin" id="seg${i}in">`+
-					`<input type="text" class="ptxt" id="seg${i}t" autocomplete="off" maxlength=${li.arch=="esp8266"?32:64} value="${inst.n?inst.n:""}" placeholder="Enter name..."/>`+
+					`<input id="seg${i}fx" value="${inst.fx}" type="hidden"/>` + // <!--WLEDMM-->
+					`<input type="text" class="ptxt" id="seg${i}t" autocomplete="off" maxlength=32 value="${inst.n?inst.n:""}" placeholder="Enter name..."/>`+
 					`<table class="infot segt">`+
 					`<tr>`+
 						`<td>${isMSeg?'Start X':'Start LED'}</td>`+
@@ -807,6 +841,7 @@ function populateSegments(s)
 					(!isMSeg ? rvXck : '') +
 					(isMSeg&&stoY-staY>1&&stoX-staX>1 ? map2D : '') +
 					(s.AudioReactive && s.AudioReactive.on ? "" : sndSim) +
+					(s.ARTIFX && s.ARTIFX.on && fxName.includes("ARTI-FX") ? cusEff : "") + // <!--WLEDMM-->
 					`<label class="check revchkl" id="seg${i}lbtm">`+
 						(isMSeg?'Transpose':'Mirror effect') + (isMSeg ?
 						'<input type="checkbox" id="seg'+i+'tp" onchange="setTp('+i+')" '+(inst.tp?"checked":"")+'>':
@@ -822,7 +857,7 @@ function populateSegments(s)
 			`</div>`;
 	}
 
-       gId('segcont').innerHTML = cn;
+	gId('segcont').innerHTML = cn;
 	let noNewSegs = (lowestUnused >= maxSeg);
 	resetUtil(noNewSegs);
 	if (gId('selall')) gId('selall').checked = true;
@@ -838,7 +873,6 @@ function populateSegments(s)
 	}
 	if (!isM && !noNewSegs && (cfg.comp.seglen?parseInt(gId(`seg${lSeg}s`).value):0)+parseInt(gId(`seg${lSeg}e`).value)<ledCount) gId(`segr${lSeg}`).classList.remove("hide");
 	gId('segutil2').style.display = (segCount > 1) ? "block":"none"; // rsbtn parent
-
 
 	if (Array.isArray(li.maps) && li.maps.length>0) { //WLEDMM >0 instead of 1 to show also first ledmap. Attention: WLED AC has isM check, in MM Matrices are supported so do not check on isM
 		let cont = `Ledmap:&nbsp;<select class="sel-sg" onchange="requestJson({'ledmap':parseInt(this.value)})">`; //WLEDMM remove <option value="" selected>Unchanged</option>
@@ -886,6 +920,7 @@ function populateEffects()
 				if (m.length>0) {
 					if (m.includes('0')) nm += "&#8226;"; // 0D effects (PWM & On/Off)
 					if (m.includes('1')) nm += "&#8942;"; // 1D effects
+					if (m.includes("1.5d")) nm += "&#8942;"; // WLEDMM: vStrips
 					if (m.includes('2')) nm += "&#9638;"; // 2D effects
 					if (m.includes('v')) nm += "&#9834;"; // volume effects
 					if (m.includes('f')) nm += "&#9835;"; // frequency effects
@@ -1006,15 +1041,10 @@ function generateListItemHtml(listName, id, name, clickAction, extraHtml = '', e
 function btype(b)
 {
 	switch (b) {
-		case 2:
 		case 32: return "ESP32";
-		case 3:
 		case 33: return "ESP32-S2";
-		case 4:
 		case 34: return "ESP32-S3";
-		case 5:
 		case 35: return "ESP32-C3";
-		case 1:
 		case 82: return "ESP8266";
 	}
 	return "?";
@@ -1026,34 +1056,295 @@ function bname(o)
 	return o.name;
 }
 
+//WLEDMM call a node with json api command
+function callNode(ip, type, json) {
+	console.log("callNode", ip, type, json);
+
+	fetch('http://' + ip + '/json/' + type, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+          //'Content-Type': 'text/html; charset=UTF-8'
+        },
+        body: JSON.stringify(json)
+    })
+	.then((res)=>{
+		console.log("then res", res);
+		loadNodes(); //reload nodes
+	})
+	.then((json)=>{
+		console.log("then json", json);
+	});
+}
+
+function ddpAll() {
+	if (!confirm('Press Yes/OK if you know what you are doing!')) return;
+	ins = [];
+	start = 0;
+	order = 0;
+	for (var node of nodesData) {
+		if (node.info.ip != lastinfo.ip) { //do not add to self
+			console.log(node);
+			output = {};
+			output.start = start; //increase with count
+			output.len =  node.info.leds.count;
+			output.pin = node.info.ip.split(".");
+			output.order = order++;
+			output.rev = false;
+			output.skip = 0;
+			output.type = 80;
+			output.ref = false;
+			output.rgbm = 0;
+			// "ins":[{"start":0,"len":24,"pin":[2],"order":0,"rev":false,"skip":0,"type":22,"ref":false,"rgbwm":0},
+			//        {"start":24,"len":241,"pin":[192,168,121,57],"order":1,"rev":false,"skip":0,"type":80,"ref":false,"rgbwm":0}]
+			ins.push(output);
+			start+=node.info.leds.count;
+		}
+	}
+	// console.log("ins", lastinfo.ip,JSON.stringify({"hw":{"led":{"ins":ins}}}));
+
+	//update own cfg.json
+	callNode(lastinfo.ip, "cfg", {"hw":{"led":{"ins":ins}}}); //self
+}
+
+//curl -s -F "update=@/Users/ewoudwijma/Developer/GitHub/MoonModules/WLED/build_output/release/WLEDMM_0.14.0-b27.31_esp32_4MB_M.bin" 192.168.8.105/update >nul &
+
+//WLEDMM
+function SuperSync() {
+	if (!confirm('Press Yes/OK if you know what you are doing!')) return;
+
+	for (i=0; i<nodesData.length; i++) {
+		if (nodesData[i].info.ip != lastinfo.ip) { //do not add to self
+			if (gId(`ssu${i}`).innerText == "yes") { //only update if needed (see SSync column)
+				callNode(nodesData[i].info.ip, "cfg", {"hw":{"led":nodesData[i].cfg.hw.led}});
+				callNode(nodesData[i].info.ip, "cfg", {"light":nodesData[i].cfg.light});
+				callNode(nodesData[i].info.ip, "state", {"rb":true}); //reboot
+			}
+		}
+	}
+}
+
 function populateNodes(i,n)
 {
 	var cn="";
 	var urows="";
 	var nnodes = 0;
-	if (n.nodes) {
-		n.nodes.sort((a,b) => (a.name).localeCompare(b.name));
-		for (var o of n.nodes) {
-			if (o.name) {
-				let onoff = `<i class="icons e-icon flr ${o.type&0x80?'':'off'}" onclick="rmtTgl('${o.ip}',this);"">&#xe08f;</i>`;
-				var url = `<button class="btn" title="${o.ip}" onclick="location.assign('http://${o.ip}');"><div class="bname">${bname(o)}</div>${o.vid<2307130?'':onoff}</button>`;
-				urows += inforow(url,`${btype(o.type&0x7F)}<br><i>${o.vid==0?"N/A":o.vid}</i>`);
-				nnodes++;
+
+	//WLEDMM starts here
+	nodesData = []; //WLEDMM reset nodes
+
+	function showPanel(panel) {
+		return "(" + panel.x + "," + panel.y + ") - " + panel.w + "x" + panel.h + " " + (panel.b?1:0) + (panel.r?1:0) + (panel.v?1:0) + (panel.s?1:0);
+	}
+
+	function checkNode(nodeNr) {
+		console.log("CheckNode", nodeNr, nodesData[nodeNr]);
+		let errFound = false;
+
+		//warnings
+		if (gId(`vid${nodeNr}`).innerText != lastinfo.vid) {
+			gId(`vid${nodeNr}`).style.color = "orange";
+		}
+		if (gId(`ver${nodeNr}`).innerText != lastinfo.ver) {
+			gId(`ver${nodeNr}`).style.color = "orange";
+		}
+		if (gId(`scale-bri${nodeNr}`).innerText != nodesData[nodeNr].cfg.light["scale-bri"]) {
+			gId(`scale-bri${nodeNr}`).style.color = "orange";
+		}
+		if (gId(`fps${nodeNr}`).innerText != nodesData[nodeNr].cfg.hw.led.fps) {
+			gId(`fps${nodeNr}`).style.color = "orange";
+		}
+
+		if (nodesData[nodeNr].cfg.hw.led.matrix) {
+			//if panel 0 the same and 1 or 2 panels (supersync always 1 or 2) and matrix size is this size then node is OK
+			if (nodesData[nodeNr].info.leds.countP != nodesData[nodeNr].cfg.hw.led.matrix.panels[0].w * nodesData[nodeNr].cfg.hw.led.matrix.panels[0].h) {
+				errFound = true;
+				gId(`lpc${nodeNr}`).style.color = "red";
+			}
+			if (gId(`mrx${nodeNr}`).innerText != lastinfo.leds.matrix.w + "x" + lastinfo.leds.matrix.h) {
+				errFound = true;
+				gId(`mrx${nodeNr}`).style.color = "red";
+			}
+			if (gId(`pnl0${nodeNr}`).innerText != gId(`pnlX${nodeNr}`).innerText)  {
+				errFound = true;
+				gId(`pnl0${nodeNr}`).style.color = "red";
+			}
+			if (gId(`pnlC${nodeNr}`).innerText > 2) {
+				errFound = true;
+				gId(`pnlC${nodeNr}`).style.color = "red";
 			}
 		}
+
+		//set the SuperSync Update needed column
+		gId(`ssu${nodeNr}`).innerText = errFound?"yes":"no";
+		if (errFound) {
+			gId(`ssu${nodeNr}`).style.color = "red";
+		}
 	}
+
+	//fetch both cfg.json and info from a node and store in nodesData array
+	function fetchInfoAndCfg(ip, nodeNr, callback) {
+		//add td placeholders
+		urows += `<tr>`;
+		for (let nm of ["ins", "pwr", "ip", "type", "rel", "ver", "vid", "fx", "scale-bri", "gcc", "fps", "fpsr", "lpc", "lvc", "mrx", "pnl0", "pnlC", "pnlX", "ssu"])
+			urows += `<td id="${nm}${nodeNr}"></td>`;
+		urows += `</tr>`;
+
+		//fetch info, state and effects
+		fetchAndExecute(`http://${ip}/`, "json/si", nodeNr, function(nodeNr, text) {
+			let info = JSON.parse(text)["info"];
+			let state = JSON.parse(text)["state"];
+
+			//set values
+			let name =  n.nodes[nodeNr].name;
+			let url = `<button class="btn" ${(ip == lastinfo.ip)?'style="background-color: red;"':''} title="${ip}" onclick="location.assign('http://${ip}');">${name}</button>`;
+			gId(`ins${nodeNr}`).innerHTML = url;
+			gId(`ip${nodeNr}`).innerText = ip;
+			gId(`pwr${nodeNr}`).innerHTML = "<button class=\"btn btn-xs\" onclick=\"callNode('"+info.ip+"','state',{'on':"+(state.on?"false":"true")+"});\"><i class=\"icons "+(state.on?"on":"off")+"\">&#xe08f;</i></button>";
+			gId(`type${nodeNr}`).innerText = info.arch;
+			gId(`vid${nodeNr}`).innerText = info.vid;
+			gId(`rel${nodeNr}`).innerText = info.rel;
+			gId(`ver${nodeNr}`).innerText = info.ver;
+			gId(`lvc${nodeNr}`).innerText = info.leds.count;
+			gId(`lpc${nodeNr}`).innerText = info.leds.countP;
+			gId(`fpsr${nodeNr}`).innerText = info.leds.fps;
+			gId(`fx${nodeNr}`).innerText = eJson.find((o)=>{return o.id==state.seg[0].fx}).name;
+
+			//store data
+			if (!nodesData[nodeNr]) nodesData[nodeNr] = {};
+			nodesData[nodeNr].info = info;
+
+			//if the node has a matrix, show matrix info
+			if (info.leds.matrix) {
+				gId(`mrx${nodeNr}`).innerText = info.leds.matrix.w + "x" + info.leds.matrix.h;
+			}
+
+			//fetch cfg.json
+			fetchAndExecute(`http://${ip}/`, "cfg.json", nodeNr, function(nodeNr, text) {
+				let cfg = JSON.parse(text);
+
+				//set values
+				gId(`scale-bri${nodeNr}`).innerText = cfg.light["scale-bri"];
+				gId(`gcc${nodeNr}`).innerText = cfg.light.gc.col  > 1;
+				gId(`fps${nodeNr}`).innerText = cfg.hw.led.fps;
+				
+				//if the node has a matrix, show matrix info
+				if (cfg.hw.led.matrix) {
+					gId(`pnl0${nodeNr}`).innerText = showPanel(cfg.hw.led.matrix.panels[0]); //show the first panel
+					gId(`pnlC${nodeNr}`).innerText = cfg.hw.led.matrix.panels.length; //show nr of panels
+
+					//if self, assign it's matrix details to all others
+					if (ip == lastinfo.ip) {
+						let panelIndex = 0; //loop over panels
+						for (let i=0; i<nnodes; i++) { //loop over all nodes found
+							if (panelIndex < cfg.hw.led.matrix.panels.length && n.nodes[i].ip != lastinfo.ip) { //loop over panels of self: assign each panel to a different node
+								
+								let panelX = cfg.hw.led.matrix.panels[panelIndex];
+								
+								gId(`pnlX${i}`).innerText = showPanel(panelX);
+								
+								//store data
+								//nodesData[i] does not exist if not all fetches done
+								if (!nodesData[i]) nodesData[i] = {};
+
+								nodesData[i].cfg = structuredClone(cfg); //structuredClone: by value, not by reference so we can make changex
+
+								//now modify led setup for the specific node
+								nodesData[i].cfg.hw.led.matrix.ba = true; //advanced settings mode
+
+								//set the first and second panel of the node
+								let widthOK = nodesData[nodeNr].info.leds.matrix.w == panelX.x + panelX.w;
+								let heightOK = nodesData[nodeNr].info.leds.matrix.h == panelX.y + panelX.h;
+								if (widthOK && heightOK) {
+									nodesData[i].cfg.hw.led.matrix.mpc = 1;
+									nodesData[i].cfg.hw.led.matrix.mph = 1;
+									nodesData[i].cfg.hw.led.matrix.mpv = 1;
+									nodesData[i].cfg.hw.led.matrix.panels = [panelX];
+								} else {
+									let dummyPanel = {"b": false,"r": false,"v": false,"s": false,
+										"x": nodesData[nodeNr].info.leds.matrix.w - 1,
+										"y": nodesData[nodeNr].info.leds.matrix.h - 1,
+										"h": 1, "w": 1};
+									nodesData[i].cfg.hw.led.matrix.mpc = 2;
+									nodesData[i].cfg.hw.led.matrix.mph = 1;
+									nodesData[i].cfg.hw.led.matrix.mpv = 2;
+									nodesData[i].cfg.hw.led.matrix.panels = [panelX, dummyPanel];
+								}
+
+								//only one led output, same as first master led output, length equal as panelX dimensions
+								nodesData[i].cfg.hw.led.ins = [cfg.hw.led.ins[0]];
+								nodesData[i].cfg.hw.led.ins[0].start = 0;
+								nodesData[i].cfg.hw.led.ins[0].len = panelX.w * panelX.h;
+
+								panelIndex++;
+							}
+							else 
+								gId(`pnlX${i}`).innerText = "";
+						}
+					}
+				}
+				callback(nodeNr);
+			}, function(nodeNr, text) {
+				console.log("cfg error", nodeNr, ip, n.nodes[nodeNr].name, text);
+				callback(nodeNr);
+			}); //also callback on error
+		}, function(nodeNr, text) {
+			console.log("json error", nodeNr, ip, n.nodes[nodeNr].name, text);
+			callback(nodeNr); //also callback on error
+		}); 
+	} //fetchInfoAndCfg
+
+	if (n.nodes) {
+		//WLEDMM add this node to nodes
+		let thisNode = {};
+		thisNode.name = i.name;
+		thisNode.ip = i.ip;
+		n.nodes.push(thisNode);
+		
+		n.nodes.sort((a,b) => (a.name).localeCompare(b.name)); //alphabetic on name
+		// console.log("populateNodes",i,n);
+
+		//set table header
+		urows += `<tr>`;
+		for (let nm of ["Instance", "Power", "IP", "Type", "Release", "Version", "Build", "Effect", "Bri%", "Gamma", "FPS", "FPS Real", "LedsP#", "LedsV#", "Matrix", "Panel0", "Panels", "PanelX", "SSync"])
+			urows += `<th style="font-size:80%;">${nm}</th>`;
+		urows += `</tr>`;
+
+		//show other nodes e.g. {name: "MM 32 L", type: 32, ip: "192.168.121.249", age: 1, vid: 2305080}
+		var nodesDone = 0;
+		for (let o of n.nodes) {
+			if (o.name) {
+				if (o.ip) { //in ap mode no ip...
+					fetchInfoAndCfg(o.ip, nnodes, function(nodeNr) {
+						nodesDone++;
+						console.log("nodesDone", nodesDone, nodeNr, n.nodes.length, nnodes, n.nodes[nodeNr].name);
+						//if all done
+						if (nodesDone == n.nodes.length ) {
+							for (let i=0; i<n.nodes.length; i++) {
+								if (n.nodes[i].ip != lastinfo.ip && nodesData[i] && nodesData[i].info && nodesData[i].cfg) //not self and data has been collected (no errors getting files)
+									checkNode(i);
+							}
+						}
+					});
+					nnodes++;
+				}
+			}
+		}
+	} //if n.nodes
+
 	if (i.ndc < 0) cn += `Instance List is disabled.`;
-	else if (nnodes == 0) cn += `No other instances found.`;
-	cn += `<table>
-	${inforow("Current instance:",i.name)}
-	${urows}
-	</table>`;
+	else if (!n.nodes) cn += `No other instances found.`;
+	cn += `<table>${urows}</table>`;
+	cn += `<button class="btn" onclick="ddpAll();">DDP all</button>`;
+	cn += `<button class="btn" onclick="SuperSync();">SuperSync</button>`;
 	gId('kn').innerHTML = cn;
+	// ${inforow("Current instance:",i.name)} //WLEDMM current instance is now also shown as node
 }
 
 function loadNodes()
 {
-	fetch(getURL('/json/nodes'), {
+	var url = (loc?`http://${locip}`:'') + '/json/nodes';
+	fetch(url, {
 		method: 'get'
 	})
 	.then((res)=>{
@@ -1074,7 +1365,7 @@ function updateTrail(e)
 {
 	if (e==null) return;
 	let sd = e.parentNode.getElementsByClassName('sliderdisplay')[0];
-	if (sd && getComputedStyle(sd).getPropertyValue("--bg") !== "none") {
+	if (sd && getComputedStyle(sd).getPropertyValue("--bg").trim() !== "none") { // trim() for Safari
 		var max = e.hasAttribute('max') ? e.attributes.max.value : 255;
 		var perc = Math.round(e.value * 100 / max);
 		if (perc < 50) perc += 2;
@@ -1093,7 +1384,7 @@ function toggleBubble(e)
 }
 
 // updates segment length upon input of segment values
-function updateLen(s)
+function updateLen(s, draw=true) //WLEDMM conditonally draw segment view
 {
 	if (!gId(`seg${s}s`)) return;
 	var start = parseInt(gId(`seg${s}s`).value);
@@ -1164,6 +1455,231 @@ function updateLen(s)
 	if (isM && start >= mw*mh) out += " [strip]";
 
 	gId(`seg${s}len`).innerHTML = out;
+
+	console.log("drawSegmentView","updateLen");
+	if (draw && isM) drawSegmentView(); //WLEDMM draw new segmentview if something changes in a segment
+}
+
+//WLEDMM
+function drawSegmentView() {
+
+	var px, py, pw, ph;
+	var topLeftX, topLeftY;
+
+	function initSegmentVars(p) {
+		px = parseInt(gId("seg"+p+"s").value); //first led x
+		if (!gId("seg"+p+"sY")) return false; //no draw for 1D segments (yet)
+		py = parseInt(gId("seg"+p+"sY").value); //first led y
+		pw = parseInt(gId("seg"+p+"e").value - gId("seg"+p+"s").value); //width
+		ph = parseInt(gId("seg"+p+"eY").value - gId("seg"+p+"sY").value); //height
+		// console.log("sergment", p, px, py, pw, ph);
+		topLeftX = px*ppL;
+		topLeftY = py*ppL;
+		// console.log("rect", p, topLeftX, topLeftY, pw*ppL, ph*ppL);
+		return true;
+	}
+
+	//calc max height and width
+	var maxWidth = 0;
+	var maxHeight = 0;
+	for (let p=0; p<gId("segcont").children.length; p++) {
+		if (!initSegmentVars(p)) break;
+		maxWidth = Math.max(maxWidth, px + pw);
+		maxHeight = Math.max(maxHeight, py + ph);
+	}
+
+	canvasPeek = gId("canvasPeek");
+	if (!ctx) {
+		//WLEDMM: add canvas, initialize and set UI
+		var canvas = gId("canvasSegments");
+		ctx = canvas.getContext('2d');
+	}
+
+	let segments = gId("Segments");
+	let windowWidth = Math.min(window.innerWidth*0.98, maxWidth*30);
+	let windowWidthFactor = maxWidth > maxHeight?1:maxWidth/maxHeight;
+	ctx.canvas.width = (segments.offsetWidth > 800?windowWidth:300) * windowWidthFactor; //Mobile and non pc mode gets 300, pc 800
+	ctx.canvas.height = ctx.canvas.width / maxWidth * maxHeight;
+	canvasPeek.width = ctx.canvas.width;
+	canvasPeek.height = ctx.canvas.height;
+	ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+
+	var ppL = ctx.canvas.width / maxWidth; //pixels per led
+	// console.log("dim", ctx.canvas.width , maxWidth, ctx.canvas.height , maxHeight, ppL);
+
+	var colorArray = [[255,0,0], [0,255,0], [0,0,255], [255,0,255], [255,165,0], [255,255,0]];
+	//               ["red",     "green",   "blue",    "magenta",   "orange",    "yellow"];
+
+	for (let p=0; p<gId("segcont").children.length; p++) {
+		// console.log(gId("P"+p+"X").value, gId("P"+p+"Y").value, gId("P"+p+"W").value, gId("P"+p+"H").value, gId("P"+p+"B").value, gId("P"+p+"R").value, gId("P"+p+"V").value, gId("P"+p+"S").checked);
+
+		if (!initSegmentVars(p)) break;
+
+		if (gId("segcont").children.length > 1) { //Estetic: Don't draw surrounding box if only one segment
+			ctx.lineWidth = 3;
+			ctx.strokeStyle="white";
+			ctx.strokeRect(topLeftX, topLeftY, pw*ppL, ph*ppL);
+		}
+
+		var fx = parseInt(gId("seg"+p+"fx").value);
+
+		var grp = parseInt(gId("seg"+p+"grp").value); //reverseX
+		var spc = parseInt(gId("seg"+p+"spc").value); //reverseX
+
+		var rx = gId("seg"+p+"rev").checked; //reverseX
+		var ry = gId("seg"+p+"rY").checked; //reverseY
+		var mx = gId("seg"+p+"mi").checked; //mirrorX
+		var my = gId("seg"+p+"mY").checked; //mirrorY
+		var tp = gId("seg"+p+"tp").checked; //mirrorY
+
+		ctx.lineWidth = 1;
+		if (mx) {
+			ctx.beginPath();
+			ctx.moveTo(topLeftX + pw/2*ppL, topLeftY);
+			ctx.lineTo(topLeftX + pw/2*ppL, topLeftY + ph*ppL);
+			ctx.stroke();
+		}
+		if (my) {
+			ctx.beginPath();
+			ctx.moveTo(topLeftX, topLeftY + ph/2*ppL);
+			ctx.lineTo(topLeftX + pw*ppL, topLeftY + ph/2*ppL);
+			ctx.stroke();
+		}
+		if (ry) {
+			ctx.beginPath();
+			ctx.moveTo(topLeftX + pw/8*ppL+10, topLeftY+10);
+			ctx.lineTo(topLeftX + pw/8*ppL, topLeftY);
+			ctx.lineTo(topLeftX + pw/8*ppL, topLeftY + ph*ppL);
+			ctx.lineTo(topLeftX + pw/8*ppL-10, topLeftY + ph*ppL-10);
+			ctx.stroke();
+		}
+		if (rx) {
+			ctx.beginPath();
+			ctx.moveTo(topLeftX+10, topLeftY + ph/8*ppL+10);
+			ctx.lineTo(topLeftX, topLeftY + ph/8*ppL);
+			ctx.lineTo(topLeftX + pw*ppL, topLeftY + ph/8*ppL);
+			ctx.lineTo(topLeftX + pw*ppL-10, topLeftY + ph/8*ppL-10);
+			ctx.stroke();
+		}
+		if (tp) {
+			ctx.beginPath();
+			ctx.moveTo(topLeftX, topLeftY);
+			ctx.lineTo(topLeftX + pw*ppL, topLeftY + ph*ppL);
+			ctx.stroke();
+		}
+
+		let groupLength = grp+spc;
+
+		//make a string from [x,y,z] adjusted by brightness
+		function rgbToString(colorRGB, brightness) {
+			function colorAdjust(color) {return 55+150*color/255*brightness;}
+			return `rgb(${colorAdjust(colorRGB[0])},${colorAdjust(colorRGB[1])}, ${colorAdjust(colorRGB[2])})`;
+		}
+
+		//draw leds
+		var counter = 0;
+		for (let y=0; y<ph; y+=groupLength) {
+			for (let x=0; x<pw; x+=groupLength) {
+				for (let j = 0; j < grp; j++) {   // grouping vertically
+					for (let g = 0; g < grp; g++) { // grouping horizontally
+						let xX = (x+g), yY = (y+j);
+						ctx.fillStyle = rgbToString(colorArray[p%colorArray.length], counter/ph/pw);
+						ctx.beginPath();
+						ctx.arc(topLeftX + ppL/2 + xX*ppL, topLeftY + ppL/2 + yY * ppL, ppL*0.4, 0, 2 * Math.PI);
+						ctx.fill();
+						counter++;
+					}
+				}
+			}
+		}
+
+	} // for each segment
+
+	if (gId("segcont").children.length > 1) { //Only show this if more then one segment
+		gId("MD").innerHTML = "total W*H=LC: " + maxWidth + " x " + maxHeight + " = " + maxWidth * maxHeight;
+	}
+	gId("MD").style.display = gId("segcont").children.length > 1?"inline":"none"
+
+	function post() {
+		for (let p=0; p<gId("segcont").children.length; p++) {
+			if (!initSegmentVars(p)) break;
+			
+			if (gId("segcont").children.length>1) { //only show number and name if more than one segment
+				ctx.font = '40px Arial'; 
+				ctx.fillStyle = "orange";
+				ctx.fillText(p, topLeftX + pw/2*ppL - 10, topLeftY + ph/2*ppL + 10);
+
+				//show name of fx
+				ctx.font = '20px Arial'; 
+				ctx.fillStyle = "white";
+				var name = eJson.find((o)=>{return o.id==fx}).name;
+				ctx.fillText(name, topLeftX+10, topLeftY + ph*ppL - 10);
+			}
+		}	
+	}
+
+	//draw the ledmap
+	if (ledmapNr>=0 && ctx) { //WLEDMM: @Troy#2642 : include ledmap = 0 as default ledmap
+		var fileName;
+		if (ledmapNr==0)
+			fileName = "ledmap.json"; //0 is ledmap.json, not ledmap0.json
+		else if (ledmapNr<10)
+			fileName = "ledmap"+ledmapNr+".json";
+		else
+			fileName = ledmapFileNames[ledmapNr-10];
+
+		fetchAndExecute((loc?`http://${locip}`:'.') + "/", fileName, null, function(parms,text) {
+			var ledmapJson = JSON.parse(text);
+			var counter = 0;
+			var noMap = [];
+			for (let i=0;i<maxWidth * maxHeight;i++) noMap.push(i); //initially add all pixels in array
+			var colorArray = ["yellow",     "green",     "magenta",   "orange"];
+
+			var customMappingTable = [];
+			for (let i=0;i<maxWidth * maxHeight;i++) customMappingTable.push(-1); //init with noshow
+			for (let i=0;i<maxWidth * maxHeight;i++)
+				if (ledmapJson["map"][i]>=0) customMappingTable[ledmapJson["map"][i]] = i;
+
+			for (let i=0;i<customMappingTable.length;i++) {
+				let mapIndex = customMappingTable[i];
+				if (mapIndex != -1) {
+					ctx.font = parseInt(ppL/3) + 'px Arial'; 
+					ctx.fillStyle = "white";
+					if (lastinfo.outputs!=null) {
+						var ledcount = 0;
+						for (let o=0; o<lastinfo.outputs.length;o++) {
+							ledcount+=lastinfo.outputs[o];
+							if (counter >= ledcount)
+								ctx.fillStyle = colorArray[o%colorArray.length];
+						}
+					}
+					x = mapIndex%maxWidth;
+					y = parseInt(mapIndex/maxWidth);
+					ctx.fillText(counter, topLeftX + ppL/2 + x*ppL-ppL*0.3, topLeftY + ppL/2 + y * ppL);
+					//remove the found pixels from noMap
+					const index = noMap.indexOf(mapIndex);
+					if (index > -1) noMap.splice(index, 1); // 2nd parameter means remove one item only
+				}
+				counter++;
+			}
+			//WLEDMM: make pixels not in ledmap black
+			for (let i=0;i<noMap.length;i++) {
+				x = noMap[i]%maxWidth;
+				y = parseInt(noMap[i]/maxWidth);
+				ctx.fillStyle = "black";
+				ctx.beginPath();
+				ctx.arc(topLeftX + ppL/2 + x*ppL, topLeftY + ppL/2 + y * ppL, ppL*0.4, 0, 2 * Math.PI);
+				ctx.fill();
+			}
+			post();
+		}, function(parms,error) { //error handling
+			console.log("drawledmap error fetching " + fileName +": ", error);
+			// downloadGHFile("LM", fileName, true, false); WLEDMM: remove as this has too much impact
+			post();
+		});
+	}
+	else
+		post();
 }
 
 // updates background color of currently selected preset
@@ -1209,7 +1725,7 @@ function updateUI()
 	if (hasRGB) {
 		updateTrail(gId('sliderR'));
 		updateTrail(gId('sliderG'));
-		updateTrail(gId('sliderB'));	
+		updateTrail(gId('sliderB'));
 	}
 	if (hasWhite) updateTrail(gId('sliderW'));
 
@@ -1273,7 +1789,6 @@ function updateSelectedFx()
 		// hide non-0D effects if segment only has 1 pixel (0D)
 		var fxs = parent.querySelectorAll('.lstI');
 		for (const fx of fxs) {
-			if (!fx.dataset.opt) continue;
 			let opts = fx.dataset.opt.split(";");
 			if (fx.dataset.id>0) {
 				if (segLmax==0) fx.classList.add('hide'); // none of the segments selected (hide all effects)
@@ -1302,20 +1817,20 @@ function displayRover(i,s)
 
 function cmpP(a, b)
 {
-	if (!a[1].n) return (a[0] > b[0]);
-	// sort playlists first, followed by presets with characters and last presets with special 1st character
-	const c = a[1].n.charCodeAt(0);
-	const d = b[1].n.charCodeAt(0);
-	if ((c>47 && c<58) || (c>64 && c<91) || (c>96 && c<123) || c>255) x = '='; else x = '>';
-	if ((d>47 && d<58) || (d>64 && d<91) || (d>96 && d<123) || d>255) y = '='; else y = '>';
-	const n = (a[1].playlist ? '<' : x) + a[1].n;
-	return n.localeCompare((b[1].playlist ? '<' : y) + b[1].n, undefined, {numeric: true});
+	//WLEDMM: simplify sort to better align with quick load labels (sort first) and ir remotes using id (sort after presets)
+	//WLEDMM a[0] = id, a[1] = Object(n, ql)
+	//WLEDMM sort first on ql alphabetically then playlists, then id numerical
+
+	function toString(a) {
+		return a[1].ql?String(a[1].ql).padEnd(2,' '):'zz' + (a[1].playlist ? '<' : '=') + String(a[0]).padStart(3, '0');
+	}
+
+	return toString(a).localeCompare(toString(b));
 }
 
 function makeWS() {
 	if (ws || lastinfo.ws < 0) return;
-	let url = loc ? getURL('/ws').replace("http","ws") : "ws://"+window.location.hostname+"/ws";
-	ws = new WebSocket(url);
+	ws = new WebSocket((window.location.protocol == "https:"?"wss":"ws")+'://'+(loc?locip:window.location.hostname)+'/ws');
 	ws.binaryType = "arraybuffer";
 	ws.onmessage = (e)=>{
 		if (e.data instanceof ArrayBuffer) return; // liveview packet
@@ -1327,6 +1842,7 @@ function makeWS() {
 		clearErrorToast();
 		gId('connind').style.backgroundColor = "var(--c-l)";
 		// json object should contain json.info AND json.state (but may not)
+		// console.log("makeWS onmessage", json); //WLEDMM Debug
 		var i = json.info;
 		if (i) {
 			parseInfo(i);
@@ -1336,15 +1852,16 @@ function makeWS() {
 		var s = json.state ? json.state : json;
 		displayRover(i, s);
 		readState(s);
+		console.log("drawSegmentView","websocket", json);
+		if (isM) drawSegmentView();
 	};
 	ws.onclose = (e)=>{
 		gId('connind').style.backgroundColor = "var(--c-r)";
-		if (wsRpt++ < 5) setTimeout(makeWS,1500); // retry WS connection
+		setTimeout(makeWS,1500); // retry WS connection
 		ws = null;
 	}
 	ws.onopen = (e)=>{
 		//ws.send("{'v':true}"); // unnecessary (https://github.com/Aircoookie/WLED/blob/master/wled00/ws.cpp#L18)
-		wsRpt = 0;
 		reqsLegal = true;
 	}
 }
@@ -1595,6 +2112,7 @@ function requestJson(command=null)
 	if (command && !reqsLegal) return; // stop post requests from chrome onchange event on page restore
 	if (!jsonTimeout) jsonTimeout = setTimeout(()=>{if (ws) ws.close(); ws=null; showErrorToast()}, 3000);
 	var req = null;
+	var url = (loc?`http://${locip}`:'') + '/json/si';
 	var useWs = (ws && ws.readyState === WebSocket.OPEN);
 	var type = command ? 'post':'get';
 	if (command) {
@@ -1611,11 +2129,13 @@ function requestJson(command=null)
 	};
 
 	if (useWs) {
+		// console.log("requestJson ws.send", command); //WLEDMM Debug
 		ws.send(req?req:'{"v":true}');
 		return;
 	}
 
-	fetch(getURL('/json/si'), {
+	// console.log("requestJson url fetch", url, type); //WLEDMM Debug
+	fetch(url, {
 		method: type,
 		headers: {
 			"Content-type": "application/json; charset=UTF-8"
@@ -1634,6 +2154,7 @@ function requestJson(command=null)
 		gId('connind').style.backgroundColor = "var(--c-g)";
 		if (!json) { showToast('Empty response', true); return; }
 		if (json.success) return;
+		// console.log("requestJson url return", json); //WLEDMM Debug
 		if (json.info) {
 			let i = json.info;
 			parseInfo(i);
@@ -1643,10 +2164,16 @@ function requestJson(command=null)
 		var s = json.state ? json.state : json;
 		readState(s);
 
+		//WLEDMM init, gfx default on upon web page load
+		if (isM) {
+			// console.log("drawSegmentView","requestjson");
+			// drawSegmentView();
+			toggleLiveview();
+		}
+
 		//load presets and open websocket sequentially
 		if (!pJson || isEmpty(pJson)) setTimeout(()=>{
 			loadPresets(()=>{
-				wsRpt = 0;
 				if (!(ws && ws.readyState === WebSocket.OPEN)) makeWS();
 			});
 		},25);
@@ -1694,29 +2221,53 @@ function toggleSync()
 
 function toggleLiveview()
 {
-	if (isInfo && isM) toggleInfo();
-	if (isNodes && isM) toggleNodes();
-	isLv = !isLv;
-	let wsOn = ws && ws.readyState === WebSocket.OPEN;
+	if (isM) {
+		//WLEDMM adding liveview2D support on main ui
+		isLv = !isLv;
+		gId("colorGFX").style.display = isLv? "inline":"none"; //WLEDMM: set off if explicitly gfx pushed
+		gId("effectGFX").style.display = isLv? "inline":"none";
+		gId("segGFX").style.display = isLv? "inline":"none";
 
-	var lvID = "liveview";
-	if (isM && wsOn) {   
-		lvID += "2D";
-		if (isLv) gId('klv2D').innerHTML = `<iframe id="${lvID}" src="about:blank"></iframe>`;
-		gId('mlv2D').style.transform = (isLv) ? "translateY(0px)":"translateY(100%)";
+		canvasPeek = gId("canvasPeek");
+		if (isLv) peek(canvasPeek); //W
+	} else {
+		//WLEDMM remove liveview2D support here
+		if (isInfo && isM) toggleInfo();
+		if (isNodes && isM) toggleNodes();
+		isLv = !isLv;
+
+		var lvID = "liveview";
+
+		gId(lvID).style.display = (isLv) ? "block":"none";
+		var url = (loc?`http://${locip}`:'') + "/" + lvID;
+		gId(lvID).src = (isLv) ? url:"about:blank";
+		size();
 	}
 
-	gId(lvID).style.display = (isLv) ? "block":"none";
-	gId(lvID).src = (isLv) ? getURL("/" + lvID + ((wsOn) ? "?ws":"")):"about:blank";
-	gId('buttonSr').classList.toggle("active");
-	if (!isLv && wsOn) ws.send('{"lv":false}');
-	size();
+	gId('buttonSr').className = (isLv) ? "active":"";
+	if (ws && ws.readyState === WebSocket.OPEN) ws.send(`{"lv":${isLv}}`);
+}
+
+//WLEDMM create and delete iFrame for peek (isLv is true if create)
+function bigPeek(doCreate)
+{
+	let lvID = "liveview2D"
+	if (doCreate) {
+		var cn = '<iframe id="liveview2D" src="about:blank" onload="this.contentWindow.document.body.onclick=function(){bigPeek(false);}"></iframe>';
+		gId('kliveview2D').innerHTML = cn;
+	}
+
+	gId('mliveview2D').style.transform = (doCreate) ? "translateY(0px)":"translateY(100%)";
+
+	gId(lvID).style.display = (doCreate) ? "block":"none";
+	var url = (loc?`http://${locip}`:'') + "/" + lvID;
+	gId(lvID).src = (doCreate) ? url:"about:blank";
 }
 
 function toggleInfo()
 {
 	if (isNodes) toggleNodes();
-	if (isLv && isM) toggleLiveview();
+	// if (isLv && isM) toggleLiveview(); //WLEDMM: not for GFX
 	isInfo = !isInfo;
 	if (isInfo) requestJson();
 	gId('info').style.transform = (isInfo) ? "translateY(0px)":"translateY(100%)";
@@ -1726,7 +2277,7 @@ function toggleInfo()
 function toggleNodes()
 {
 	if (isInfo) toggleInfo();
-	if (isLv && isM) toggleLiveview();
+	// if (isLv && isM) toggleLiveview(); //WLEDMM: not for GFX
 	isNodes = !isNodes;
 	if (isNodes) loadNodes();
 	gId('nodes').style.transform = (isNodes) ? "translateY(0px)":"translateY(100%)";
@@ -1887,7 +2438,7 @@ function makeP(i,pl)
 			end: 0
 		};
 		var rep = plJson[i].repeat ? plJson[i].repeat : 0;
-		content = 
+		content =
 `<div id="ple${i}" style="margin-top:10px;"></div><label class="check revchkl">Shuffle
 	<input type="checkbox" id="pl${i}rtgl" onchange="plR(${i})" ${plJson[i].r||rep<0?"checked":""}>
 	<span class="checkmark"></span>
@@ -1912,26 +2463,26 @@ ${makePlSel(plJson[i].end?plJson[i].end:0, true)}
 	<span class="lstIname">
 	Include brightness
 	</span>
-	<input type="checkbox" id="p${i}ibtgl" checked>
+	<input type="checkbox" id="p${i}ibtgl" ${ibtglChecked?"checked":""}> <!--WLEDMM-->
 	<span class="checkmark"></span>
 </label>
 <label class="check revchkl">
 	<span class="lstIname">
 	Save segment bounds
 	</span>
-	<input type="checkbox" id="p${i}sbtgl" checked>
+	<input type="checkbox" id="p${i}sbtgl" ${sbtglChecked?"checked":""}> <!--WLEDMM-->
 	<span class="checkmark"></span>
 </label>
 <label class="check revchkl">
 	<span class="lstIname">
 	Checked segments only
 	</span>
-	<input type="checkbox" id="p${i}sbchk">
+	<input type="checkbox" id="p${i}sbchk" ${sbchkChecked?"checked":""}> <!--WLEDMM-->
 	<span class="checkmark"></span>
 </label>`;
-		if (Array.isArray(lastinfo.maps) && lastinfo.maps.length>1) {
+		if (Array.isArray(lastinfo.maps) && lastinfo.maps.length>0) { //WLEDMM >0 instead of 1 to show also first ledmap. Attention: WLED AC has isM check, in MM Matrices are supported so do not check on isM
 			content += `<div class="lbl-l">Ledmap:&nbsp;<div class="sel-p"><select class="sel-p" id="p${i}lmp"><option value="">Unchanged</option>`;
-			for (const k of (lastinfo.maps||[])) content += `<option value="${k.id}"${(i>0 && pJson[i].ledmap==k.id)?" selected":""}>${k.id==0?'Default':(k.n?k.n:'ledmap'+k.id+'.json')}</option>`;
+			for (const k of (lastinfo.maps||[])) content += `<option value="${k.id}"${(i>0 && pJson[i].ledmap==k.id)?" selected":""}>${k.id==0?'Default':(k.id<10?'ledmap'+k.id+'.json':ledmapFileNames[k.id-10])}</option>`;
 			content += "</select></div></div>";
 		}
 	}
@@ -1967,7 +2518,15 @@ function makePUtil()
 	p.innerHTML = `<div class="presin expanded">${makeP(0)}</div>`;
 	let pTx = gId('p0txt');
 	pTx.focus();
-	pTx.value = eJson.find((o)=>{return o.id==selectedFx}).name;
+	//WLEDMM: take the name PLUS the icons as default name
+	let fxName = eJson.find((o)=>{return o.id==selectedFx}).name;
+
+	let sE = gId('fxlist').querySelector(`.lstI[data-id="${selectedFx}"]`);
+	if (sE) {
+		fxName = sE.querySelector(".lstIname").innerText;
+	}
+
+	pTx.value = fxName;
 	pTx.select();
 	p.scrollIntoView({
 		behavior: 'smooth',
@@ -2053,14 +2612,14 @@ function tglSegn(s)
 function selSegAll(o)
 {
 	var obj = {"seg":[]};
-	for (let i=0; i<=lSeg; i++) if (gId(`seg${i}`)) obj.seg.push({"id":i,"sel":o.checked});
+	for (let i=0; i<=lSeg; i++) obj.seg.push({"id":i,"sel":o.checked});
 	requestJson(obj);
 }
 
 function selSegEx(s)
 {
 	var obj = {"seg":[]};
-	for (let i=0; i<=lSeg; i++) if (gId(`seg${i}`)) obj.seg.push({"id":i,"sel":(i==s)});
+	for (let i=0; i<=lSeg; i++) obj.seg.push({"id":i,"sel":(i==s)});
 	obj.mainseg = s;
 	requestJson(obj);
 }
@@ -2078,7 +2637,7 @@ function selGrp(g)
 	event.stopPropagation();
 	var sel = gId(`segcont`).querySelectorAll(`div[data-set="${g}"]`);
 	var obj = {"seg":[]};
-	for (let i=0; i<=lSeg; i++) if (gId(`seg${i}`)) obj.seg.push({"id":i,"sel":false});
+	for (let i=0; i<=lSeg; i++) obj.seg.push({"id":i,"sel":false});
 	if (sel) for (let s of sel||[]) {
 		let i = parseInt(s.id.substring(3));
 		obj.seg[i] = {"id":i,"sel":true};
@@ -2355,8 +2914,11 @@ function saveP(i,pl)
 			obj.o = true;
 		} else {
 			obj.ib = gId(`p${i}ibtgl`).checked;
+			ibtglChecked = obj.ib; //WLEDMM
 			obj.sb = gId(`p${i}sbtgl`).checked;
+			sbtglChecked = obj.sb; //WLEDMM
 			obj.sc = gId(`p${i}sbchk`).checked;
+			sbchkChecked = obj.sc; //WLEDMM
 			if (gId(`p${i}lmp`) && gId(`p${i}lmp`).value!=="") obj.ledmap = parseInt(gId(`p${i}lmp`).value);
 		}
 	}
@@ -2579,24 +3141,6 @@ function setBalance(b)
 	requestJson(obj);
 }
 
-function rmtTgl(ip,i) {
-	event.preventDefault();
-	event.stopPropagation();
-	fetch(`http://${ip}/win&T=2`, {method: 'get'})
-	.then((r)=>{
-		return r.text();
-	})
-	.then((t)=>{
-		let c = (new window.DOMParser()).parseFromString(t, "text/xml");
-		// perhaps just i.classList.toggle("off"); would be enough
-		if (c.getElementsByTagName('ac')[0].textContent === "0") {
-			i.classList.add("off");
-		} else {
-			i.classList.remove("off");
-		}
-	});
-}
-
 var hc = 0;
 setInterval(()=>{
 	if (!isInfo) return;
@@ -2619,7 +3163,7 @@ function cnfReset()
 		bt.innerHTML = "Confirm Reboot";
 		cnfr = true; return;
 	}
-	window.location.href = getURL("/reset");
+	window.location.href = "/reset";
 }
 
 var cnfrS = false;
@@ -2642,6 +3186,145 @@ function rSegs()
 	}
 	for (let i=1; i<=lSeg; i++) obj.seg.push({"stop":0});
 	requestJson(obj);
+}
+
+//WLEDMM generate presets.json file
+function genPresets()
+{
+	var result = "";
+	var sep = "{";
+
+	var effects = eJson;
+	var playlistPS = JSON.parse("{}");
+	var playlistSep = JSON.parse("{}");
+	var playlistDur = JSON.parse("{}");
+	var playlistTrans = JSON.parse("{}");
+	function addToPlaylist(m, id) {
+		if (!playlistPS[m]) playlistPS[m] = "";
+		if (!playlistDur[m]) playlistDur[m] = "";
+		if (!playlistTrans[m]) playlistTrans[m] = "";
+		if (!playlistSep[m]) playlistSep[m] = "";
+		playlistPS[m] += playlistSep[m] + `${id}`;
+		playlistDur[m] += playlistSep[m] + "100";
+		playlistTrans[m] += playlistSep[m] + "7";
+		playlistSep[m] = ",";
+	}
+	for (let ef of effects) {
+		if (ef.name.indexOf("RSVD") < 0) {
+			if (Array.isArray(fxdata) && fxdata.length>ef.id) {
+				let fd = fxdata[ef.id];
+				let eP = (fd == '')?[]:fd.split(";"); // effect parameters
+				let m = (eP.length<4 || eP[3]==='')?'1':eP[3]; // flags
+				// console.log(ef, eP);
+				//transform key values in json format
+				var defaultString = "";
+				//if key/values defined, convert them to json in defaultString
+				if (eP.length>4) {
+					let defaults = (eP[4] == '')?[]:eP[4].split(",");
+					for (let i=0; i<defaults.length;i++) {
+						let keyValue = (defaults[i] == '')?[]:defaults[i].split("=");
+						defaultString += `,"${keyValue[0]}":${keyValue[1]}`;
+					}
+				}
+				//if not defined set to default
+				if (!defaultString.includes("sx")) defaultString += ',"sx":128'; //Speed
+				if (!defaultString.includes("ix")) defaultString += ',"ix":128'; //Intensity
+				if (!defaultString.includes("c1")) defaultString += ',"c1":128'; //Custom 1
+				if (!defaultString.includes("c2")) defaultString += ',"c2":128'; //Custom 2
+				if (!defaultString.includes("c3")) defaultString += ',"c3":16'; //Custom 3
+				if (!defaultString.includes("o1")) defaultString += ',"o1":0'; //Check 1
+				if (!defaultString.includes("o2")) defaultString += ',"o2":0'; //Check 2
+				if (!defaultString.includes("o3")) defaultString += ',"o3":0'; //Check 3
+				if (!defaultString.includes("pal")) defaultString += ',"pal":11'; //Temporary for deterministic effects test: Set to 11/Raibow instead of 1/Random smooth palette (if not set different)
+				if (!defaultString.includes("m12") && m.includes("1") && !m.includes("1.5") && !m.includes("12")) 
+					defaultString += ',"rev":true,"mi":true,"rY":true,"mY":true,"m12":2'; //Arc expansion
+				else {
+					if (!defaultString.includes("rev")) defaultString += ',"rev":false';
+					if (!defaultString.includes("mi")) defaultString += ',"mi":false';
+					if (!defaultString.includes("rY")) defaultString += ',"rY":false';
+					if (!defaultString.includes("mY")) defaultString += ',"mY":false';
+				}
+				result += `${sep}"${ef.id}":{"n":"${ef.name}","mainseg":0,"seg":[{"id":0,"fx":${ef.id}${defaultString}}]}`;
+				sep = "\n,";
+				addToPlaylist(m, ef.id);
+				addToPlaylist("All", ef.id);
+				if (m.includes("1")) addToPlaylist("All1", ef.id);
+				if (m.includes("2")) addToPlaylist("All2", ef.id);
+			} //fxdata is array
+		} //not RSVD
+	} //all effects
+
+	var seq=230; //Playlist start here
+	// console.log(playlistPS, playlistDur, playlistTrans);
+	for (const m in playlistPS) {
+		let playListString = `\n,"${seq}":{"n":"${m}D Playlist","ql":"${seq}","on":true,"playlist":{"ps":[${playlistPS[m]}],"dur":[${playlistDur[m]}],"transition":[${playlistTrans[m]}],"repeat":0,"end":0,"r":1}}`;
+		// console.log(playListString);
+		result += playListString;
+		seq++;
+	}
+
+	result += "}";
+
+	//assign result and show text and save button
+	gId("genPresets").hidden = true;
+	gId("savePresetsGen").hidden = false;
+	gId("presetsGen").hidden = false;
+	gId("presetsGen").value = result;
+	// console.log(result);
+
+}
+
+//WLEDMM: utility function to load contents of file from FS (used in draw)
+function fetchAndExecute(url, name, parms, callback, callError = null)
+{
+	let errorCalled = false;
+  fetch
+  (url+name, {
+    method: 'get'
+  })
+  .then(res => {
+    if (!res.ok) {
+		if (!errorCalled && callError) callError(parms, "File " + name + " not found");
+		errorCalled = true;
+    	return "";
+    }
+    return res.text();
+  })
+  .then(text => {
+    callback(parms, text);
+  })
+  .catch(function (error) {
+	if (!errorCalled && callError) callError(parms, "Error getting " + name);
+	errorCalled = true;
+	console.log(error);
+  })
+  .finally(() => {
+    // if (callback) setTimeout(callback,99);
+  });
+}
+
+//WLEDMM: utility function to save file to FS (used in savePresetsGen)
+function uploadFileWithText(name, text)
+{
+  var req = new XMLHttpRequest();
+  req.addEventListener('load', function(){showToast(this.responseText,this.status >= 400)});
+  req.addEventListener('error', function(e){showToast(e.stack,true);});
+  req.open("POST", "/upload");
+  var formData = new FormData();
+
+  var blob = new Blob([text], {type : 'application/text'});
+  var fileOfBlob = new File([blob], name);
+  formData.append("upload", fileOfBlob);
+
+  req.send(formData);
+}
+
+//WLEDMM: save the presets.json to FS
+function savePresetsGen()
+{
+	if (!confirm('Are you sure to (over)write presets.json?')) return;
+
+	uploadFileWithText("/presets.json", gId("presetsGen").value);
 }
 
 function loadPalettesData(callback = null)
@@ -2673,7 +3356,9 @@ function loadPalettesData(callback = null)
 
 function getPalettesData(page, callback)
 {
-	fetch(getURL(`/json/palx?page=${page}`), {
+	var url = (loc?`http://${locip}`:'') + `/json/palx?page=${page}`;
+
+	fetch(url, {
 		method: 'get',
 		headers: {
 			"Content-type": "application/json; charset=UTF-8"
@@ -2874,7 +3559,7 @@ function size()
 	var h = gId('top').clientHeight;
 	sCol('--th', h + "px");
 	sCol('--bh', gId('bot').clientHeight + "px");
-	if (isLv) h -= 4;
+	if (isLv && !isM) h -= 4; //WLEDMM: no for matrices
 	sCol('--tp', h + "px");
 	togglePcMode();
 	lastw = wW;
@@ -2895,6 +3580,9 @@ function togglePcMode(fromB = false)
 	gId('bot').style.height = (pcMode && !cfg.comp.pcmbot) ? "0":"auto";
 	sCol('--bh', gId('bot').clientHeight + "px");
 	_C.style.width = (pcMode)?'100%':'400%';
+	//WLEDMM resize segmentview
+	console.log("drawSegmentView","togglePCMode");
+	if (isM) drawSegmentView();
 }
 
 function mergeDeep(target, ...sources)
